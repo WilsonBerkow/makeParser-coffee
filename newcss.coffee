@@ -1,6 +1,6 @@
 # (c) Wilson Woodcock Berkow. MIT License.
 
-# (This is parse0.2.coffee in my local folder. This is the first commit of this file.)
+# parse0.3.coffee. This uses the new error system (with @throw).
 
 "use strict"
 
@@ -47,9 +47,9 @@ indentsAbstraction = (which) ->
         else if typeOf(which) is "number"
             (nextIndent - fstIndent) is which # Here `which` is the amount of indent. For outdent, its negative.
         else
-            throw new Error "Invalid argument to indentsAbstraction: #{which}"
+            @throw "Invalid argument to indentsAbstraction: #{which}"
     makeParser -> # THIS NEEDS TO TO MANUAL ANALYSIS OF THE STRING: assume its at the end of a line, check the indent on the current line, check difference between indent on next line.
-        # This must be used at the END of the line, before the \n and before the line that you want indented.
+        # This must be used at the END of the line, before the \n, before the line that you want indented.
         @require "\n"
         fstLine = @str[findRecentestCharIndex(@str, @index - 2, "\n") + 1...@index - 1] # 2 is subtracted from the arg to findRecen...(...) so that it doesnt stop at the "\n" just @required().
         nextLine = @str[@index...@str.indexOf("\n", @index)]
@@ -59,7 +59,7 @@ indentsAbstraction = (which) ->
             @require getSpaces
             nextIndent - fstIndent # For convenience, it returns the size of the dent.
         else
-            throw new Error "Expected #{which}dent."
+            @throw "Expected #{which}dent."
 getIndent = indentsAbstraction("in").makeNamed("getIndent")
 getSameDent = indentsAbstraction("same").makeNamed("getSameDent")
 getterExactDent = (num) -> makeParser "getExactDent#{num}", -> # I think this will be useful for blocks which have to detect if the outdent at the end of a sub-block makes the next stmts at the same indent as the block, or ends the block.
@@ -137,8 +137,8 @@ getInvocation = makeParser "getInvocation", invocFuncs.map (o) -> # Should this 
         
         # TODO: the following will never run, as the previous will catch it, but i dont have time to work on it now. Do that later tho.
         # Next is: With most whitespace: statements can be on multiple line, appearing on a line after function name
-        makeParser.seq(getIndent, getAssigArgs).makeNamed("get-invoc-args-on-mult-lines").return(([ind, assigs]) -> assigs)
-    ]).makeNamed("get-options-for-arguments-forms").return (findings) -> {name: findings[0], args: findings[1], src: findings.src}
+        makeParser.seq(getIndent, getAssigArgs).makeNamed("get-invoc-args-on-mult-lines").return(([indent, assigs]) -> assigs)
+    ]).makeNamed("get-options-for-arguments-forms").return (findings) -> {"type": "invocation", "name": findings[0], "args": findings[1], "src": findings.src}
     # TODO: SOLVE: somewhere, there is a conditional based on .parserName that shouldn't be there, cuz when the above seq-parser has .parserName, the error message works, and reads the names of the functions in the above array, but when it doesn't have a name, it read's their names as `undefined`....
 
 getStylesheet = makeParser.many(getPrefixedBlock, sep: getWhite, end: getWhite.opt()).return (data) -> {"type": "stylesheet", "body": data}
