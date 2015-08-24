@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Example</title>
+        <style>
+            #outputContainer {
+                border: 1px solid black;
+                padding: 5px;
+                min-height: 100px;
+            }
+            .flexrow {
+                display: flex;
+                flex-direction: row;
+                align-items: stretch;
+                align-content: stretch;
+            }
+            .flexrow > * {
+                flex: 1;
+            }
+            textarea {
+                min-height: 240px;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>makeParser.coffee</h1>
+        <p>
+            Define a parser 'main' in the first textarea, and it will be used
+            to parse the data in the second textarea.
+        </p>
+        <p><button id="go" title="Ctrl-Enter">Parse</button></p>
+        <div class="flexrow">
+            <div>Write a short parser here!</div>
+            <div style="flex: 0.4;">And some text to be parsed here!</div>
+        </div>
+        <div class="flexrow">
+            <textarea id='parser-input'>
+# Define some helpers:
+sign = makeParser ->
+    return @optional(["+", "-"]) ? "+"
+digits = makeParser /^[\d]+/ # Regexes can be used to capture simple patterns
+
+# This is what will parse the content of the box on the right.
+main = makeParser ->
+    res = {}
+    
+    # Require the simple stuff.
+    res.sign = @require sign
+    res.integerPart = @require digits
+    
+    # Set some defaults
+    res.ePart = res.eSign = res.decimalPart = ""
+    
+    # Proceed with the rest of the number
+    @optional ".", =>
+        # @optional can be passed two callbacks, handling success
+        # and failure respectively. Here, if the decimal point
+        # is found, we want to continue parsing.
+        res.decimalPart = @require digits
+        @optional ["e", "E"], =>
+            res.eSign = @require sign
+            res.ePart = @require digits
+    
+    @end() # Require that this is the end of the input
+    
+    return res
+            </textarea>
+            <textarea id='parse-data' style="resize: none; flex: 0.4;">6.0221415e+23</textarea>
+        </div>
+        <div id='outputContainer'>
+            <b>Output:</b>
+            <pre id='output'></pre>
+        </div>
+        <h3>About</h3>
+        <p>
+            <code>makeParser.coffee</code> is a recursive-descent parsing library that I wrote in 2014
+            after feeling inspired by the combinator-centric parsing styles of Haskell. It is fairly
+            smooth to use, and nicely fitted to the syntactic sugar of CoffeeScript, though I don't
+            recommend using it extensively as I haven't written any documentation, nor am I very
+            likely to return to it for maintenance in the future.
+        </p>
+        <script src="jquery-1.11.1.min.js"></script>
+        <script src="coffee-script.js"></script>
+        <script src="../makeParser.js"></script>
+        <script>
+            (function (CoffeeScript, $, getMainParser) {
+                var codeInput = $('#parser-input')[0];
+                var dataInput = $('#parse-data')[0];
+                var $output = $('#output');
+                
+                var showError = function (e) {
+                    console.log("Your parser threw an error:");
+                    console.error(e);
+                    $output.html("<h3 style='color: red;'>" + e.name + ":</h3>" + (e.message || e.msg));
+                };
+                
+                var go = function () {
+                    $output.prepend("!!! Check the console for an error in your CoffeeScript.\n");
+                    try {
+                        var code = CoffeeScript.compile(codeInput.value, {bare: true});
+                        var main = getMainParser(code, showError);
+                        var parseResult = main(dataInput.value);
+                        console.log("Your parser returned:", parseResult);
+                        $output.text(JSON.stringify(parseResult, null, 4));
+                    } catch (e) {
+                        showError(e);
+                    }
+                };
+                
+                jQuery("#go").click(go);
+                jQuery(document).keypress(function (event) {
+                    if (event.which === 10 && event.ctrlKey) {
+                        go();
+                    }
+                });
+                go(); // For the default textarea entries.
+            }(CoffeeScript, jQuery, function getMainParser(source, showError) {
+                // Isolate to reduce likelihood of accidental damage.
+                try {
+                    eval(source);
+                    if (typeof main === "undefined") {
+                        return function () { return "!!! You did not define a top-level -main- function."; };
+                    }
+                    return main;
+                } catch (err) {
+                    return function () { throw err; }
+                }
+            }));
+        </script>
+    </body>
+</html>
