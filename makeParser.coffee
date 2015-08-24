@@ -10,7 +10,7 @@ util = Object.freeze # This is frozen as it is publicly added to makeParser.
         ) (f) ->
             le (args...) ->
                 f(f).call(this, args...)
-    "loop": (f) -> util.y(f)() # For functional/expressional loops. Interface: util.loop (repeat) => => ...
+    "loop": (f) -> util.y(f)() # For functional/expressional loops. Interface: util.loop (repeat) => (i = 0, data, ...) => ...
     "makeObject": (proto, ownProps) ->
         result = Object.create proto
         for prop, val of ownProps
@@ -41,7 +41,7 @@ makeParsingInstance = do -> # The parsing instance contains methods for parsing,
             #                        (lookFor, {found, notFound, dontAdvance, args})
             #                        ({lookFor, found, notFound, dontAdvance, args}))
             if util.typeOf(a) in ["number", "null", "undefined"]
-                @throw "Invalid argument to @#{which}."
+                @throw "Invalid argument to @#{which}.\n\nJSON.stringify(the argument) is #{JSON.stringify a}.\n\n\nString(the argument) is #{a}"
             if util.typeOf(a) is "object"
                 prsr = makeSureParser a.lookFor
                 other = a
@@ -107,7 +107,12 @@ makeParsingInstance = do -> # The parsing instance contains methods for parsing,
                 @optional makeParser.getWhite
         "optional": parserUsage("optional")
         "require": parserUsage("require")
+        "end": ->
+            if @char() isnt undefined
+                throw parsingError("Expected end of input, instead found '#{@char()}'")
     (str, i = 0) ->
+        if util.typeOf(str) isnt "string"
+            throw new Error "First argument to a parser must be a string. Instead,\n#{str}\nof type #{util.typeOf(str)} was found."
         util.makeObject(proto, {
             "index": i
             "str": str
@@ -122,13 +127,13 @@ parserListToString = (arr) -> # For stringifying an array of parser options as t
             switch util.typeOf(x)
                 when "function"
                     if x.isParser
-                        repeat(tail(options), str + "(a parser named #{x.parserName}), ")
+                        repeat(tail(options), str + "#{x.parserName}, ")
                     else
-                        repeat(tail(options), str + "(a plain function), ")
+                        repeat(tail(options), str + "(not-yet-named fn parser), ")
                 when "regexp"
                     repeat(tail(options), str + x.toString() + ", ")
                 when "undefined"
-                    repeat(tail(options), str + "undefined, ")
+                    repeat(tail(options), str + "(undefined), ")
                 else
                     repeat(tail(options), str + JSON.stringify(x) + ", ")
 @makeParser = (args...) ->
@@ -159,13 +164,14 @@ parserListToString = (arr) -> # For stringifying an array of parser options as t
                 @throw """Expected "#{x}" at index #{@index} and instead found #{@char()} in string:\n#{JSON.stringify(@str)}"""
     else if util.typeOf(x) is "array" # Each element of the array is an OPTION, and this requires one to match. RETURNS whatever the matched option returns.
         makeParser (name ? "array-form-parser: #{parserListToString x}"), (args) ->
-            @loop (repeat) => (i = 0) =>
-                if not x[i]?
-                    @throw "(From #{name}) Expected one of the following: #{parserListToString(x)} in string:\n#{@str}\nat index #{@index}"
+            errors = []
+            @loop (repeat) => (i = 0, errors = []) =>
+                if i >= x.length
+                    @throw "(From #{name}) Expected one of the following: #{parserListToString(x)} in string:\n#{@str}\nat index #{@index}. Errors were #{JSON.stringify errors, null, 4}"
                 @optional x[i],
                     args: args
-                    notFound: ->
-                        repeat(i + 1)
+                    notFound: (err) ->
+                        repeat(i + 1, errors.concat([err]))
     else if util.typeOf(x) is "regexp"
         makeParser (name ? "regexp-form-parser: #{x}"), ->
             val = x.exec @str[@index...]
@@ -175,7 +181,7 @@ parserListToString = (arr) -> # For stringifying an array of parser options as t
                 @require val[0]
     else if util.typeOf(x) is "function" # This is the primary form, which every other overload is defined in terms of.
         if x.isParser
-            makeParser (name ? "copy-of-parser: #{name}"), ->
+            makeParser (name ? "copy of: #{x.parserName}"), ->
                 @require x
         else # This is the usual case. -x- is a function intended to be made into a parser.
             ### The parser (in the variable -parser-), can have the following arrangments of arguments:
@@ -230,8 +236,7 @@ parserListToString = (arr) -> # For stringifying an array of parser options as t
                     if err
                         other.notFound(err)
                     else
-                        if not other.dontAdvance
-                            origInstance.index = instance.index # This is what synchronizes the referenced instance with the one it's used in, so that @require()ing another function also advances @index in the current instance.
+                        origInstance.index = instance.index unless other.dontAdvance # This is what synchronizes the referenced instance with the one it's used in, so that @require()ing another function also advances @index in the current instance.
                         if other.found
                             other.found(val)
                         else
@@ -259,7 +264,7 @@ parserListToString = (arr) -> # For stringifying an array of parser options as t
                 makeParser (parser.parserName + "--opt"), ->
                     @optional parser
             parser.isParser = true
-            parser.parserName = name
+            parser.parserName = name ? "a parser"
             Object.freeze parser
     else
         throw new Error("The -makeParser- function requires argument(s).")
